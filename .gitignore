@@ -131,4 +131,5 @@ dmypy.json
 *.blend*
 !blend/project.blend
 *.png
+*.webp
 poses

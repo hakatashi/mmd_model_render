@@ -8,9 +8,10 @@ from mmd_tools.core.vpd.importer import VPDImporter
 from mmd_tools.utils import makePmxBoneMap
 from mathutils import Vector
 from pathlib import Path
+from wand.image import Image
 
 
-skin_mode = True
+skin_mode = False
 
 
 reference_head_positions = {
@@ -177,10 +178,20 @@ def example_function(model_path):
 
         bpy.context.scene.camera = target_camera
 
+        png_filename = os.getcwd() + f'/outputs/render_{pose_name}.png'
+        webp_filename = os.getcwd() + f'/outputs/render_{pose_name}.webp'
+
         render = bpy.context.scene.render
         render.use_file_extension = True
-        render.filepath = os.getcwd() + f'/outputs/render_{pose_name}.png'
+        render.filepath = png_filename
         bpy.ops.render.render(write_still=True)
+
+        with Image(filename=png_filename) as img:
+            img.format = 'webp'
+            img.compression_quality = 90
+            img.save(filename=webp_filename)
+
+        Path(png_filename).unlink()
 
 
 if __name__ == "__main__":
