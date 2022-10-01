@@ -1,19 +1,58 @@
 import os
+import re
 import sys
 import bpy
 from mmd_tools.core.pmx.importer import PMXImporter
 from mmd_tools.core.vpd.importer import VPDImporter
 from mmd_tools.utils import makePmxBoneMap
+from mathutils import Vector
 from pathlib import Path
 
 
-cloth_names = ['スカート', 'ワンピース', 'フリル', '腕カバー', '袖', '下着', 'パンツ', 'ネックカバー', '上着', 'サラシ', '帯', '艤装', '胸飾り', '服', '新規材質']
+skin_mode = False
+
+
+reference_head_positions = {
+    'back_and_forward_legs': (0.8624, -0.1238, 5.5022),
+    'cross_leg': (-0.0700, 0.7380, 14.7587),
+    'doggy': (1.0683, -7.6694, 3.5086),
+    'doggy_open_legs': (-0.5452, -0.8008, 3.7815),
+    'doggy_with_v_sign': (0.4210, -0.4429, 3.4392),
+    'facing_upward': (-2.8695, 4.6703, 1.9988),
+    'finger_pointing_up': (0.0082, -0.0161, 14.8805),
+    'folding_arms_behind_head': (-3.1672, -2.3526, 7.1577),
+    'folding_arm_behind_head': (0.5661, 0.1667, 14.9525),
+    'goodbye_sengen': (0.5967, -1.2710, 15.2204),
+    'holding_leg_upward': (2.4233, -6.7610, 4.4834),
+    'jumping': (4.9189, 0.9622, 15.4107),
+    'lean_against_desk': (-2.9818, -0.3486, 11.4029),
+    'looking_back_with_finger_on_mouth': (-0.0915, -0.7889, 15.0663),
+    'lying': (-3.0498, -0.1696, 5.9243),
+    'lying_with_v_sign': (-2.8374, 2.4108, 1.6016),
+    'm_open': (0.3915, 8.9699, 4.0739),
+    'raising_both_hands': (0.0021, 0.0137, 14.3010),
+    'shhh': (0.5501, -4.9801, 15.1046),
+    'showing_hip': (-0.3387, -4.2471, 4.7365),
+    'side_m_open': (10.4957, 8.4770, 4.8509),
+    'sitting_bending_backward': (2.2346, -0.2189, 4.4127),
+    'sitting_crossing_arms': (0.6635, -0.3354, 7.4524),
+    'sitting_self_massage': (0.0000, 0.1768, 8.0641),
+    'sitting_with_looking_at_sky': (0.0000, 1.1520, 7.4179),
+    'stand1': (0.2857, -0.4290, 15.6331),
+    'stand2': (0.0000, -0.6633, 15.2251),
+    'stand_back_hand_on_breast': (0.5838, 0.6195, 14.9025),
+    'stand_picking_skirt': (-0.4807, -0.5364, 15.7269),
+    'waving_hand': (0.3578, -1.1006, 14.8919),
+}
+
+
+cloth_names = ['スカート', 'ワンピース', 'フリル', '腕カバー', '袖', '下着', 'パンツ', 'ネックカバー', '上着', 'サラシ', '帯', '艤装', '胸飾り', '服', '新規材質', 'boot', 'belt', 'pants', 'swet', 'bakkcle', 'bikini']
 skin_names = ['の中', '中身', '肌', '体']
 
 
 def example_function(model_path):
     scene_path = os.getcwd() + '/blend/project.blend'
-    # scene_path = os.getcwd() + '/project.blend'
+    # scene_path = os.getcwd() + '/project_dump1.blend'
     bpy.ops.wm.open_mainfile(filepath=scene_path)
 
     PMXImporter().execute(
@@ -22,10 +61,16 @@ def example_function(model_path):
         clean_model=True,
     )
 
+    empty_images = set()
+    for i in bpy.data.images:
+        if len(i.pixels) == 0:
+            empty_images.add(i.name)
+
     arm_object = bpy.context.active_object
     for object in bpy.context.scene.collection.children.get('Collection').objects:
         if object.type == 'ARMATURE':
             arm_object = object
+    head_bone = arm_object.pose.bones.get('頭')
 
     bpy.ops.wm.save_as_mainfile(filepath='project_dump1.blend')
 
@@ -53,14 +98,21 @@ def example_function(model_path):
                     emission.inputs.get('Strength')
                 )
 
-        is_cloth = any(cloth_name in material.name for cloth_name in cloth_names)
-        is_skin = any(skin_name in material.name for skin_name in skin_names)
-        if is_cloth:
-            material.mmd_material.alpha = 0.0
-            pass
-        if is_skin:
-            material.mmd_material.alpha = 1.0
-            pass
+        if skin_mode:
+            is_cloth = any(re.search(cloth_name, material.name, re.IGNORECASE) for cloth_name in cloth_names)
+            is_skin = any(re.search(skin_name, material.name, re.IGNORECASE) for skin_name in skin_names)
+            if is_cloth:
+                material.mmd_material.alpha = 0.0
+                pass
+            if is_skin:
+                material.mmd_material.alpha = 1.0
+                pass
+
+        if material.node_tree is not None:
+            for node in material.node_tree.nodes:
+                if node.name in ['mmd_base_tex', 'mmd_toon_tex', 'mmd_sphere_tex']:
+                    if node.image.name in empty_images:
+                        material.node_tree.nodes.remove(node)
 
     bpy.ops.wm.save_as_mainfile(filepath='project_dump.blend')
 
@@ -76,7 +128,20 @@ def example_function(model_path):
         )
         importer.assign(arm_object)
 
-        bpy.context.scene.camera = bpy.context.scene.objects[f'{pose_name}_camera']
+        target_camera = bpy.context.scene.objects[f'{pose_name}_camera']
+
+        if head_bone is not None:
+            head_position = arm_object.location + head_bone.head
+            reference_head_position = reference_head_positions.get(pose_name)
+
+            if 'Rushia' in model_path:
+                file_object = open('sample.txt', 'a')
+                file_object.write(f"    '{pose_name}': {head_position},\n")
+                file_object.close()
+            if reference_head_position is not None:
+                target_camera.location += head_position - Vector(reference_head_position)
+
+        bpy.context.scene.camera = target_camera
 
         render = bpy.context.scene.render
         render.use_file_extension = True
