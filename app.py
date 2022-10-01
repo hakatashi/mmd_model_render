@@ -1,4 +1,5 @@
 import os
+from random import randrange
 import re
 import sys
 import bpy
@@ -9,7 +10,7 @@ from mathutils import Vector
 from pathlib import Path
 
 
-skin_mode = False
+skin_mode = True
 
 
 reference_head_positions = {
@@ -44,6 +45,17 @@ reference_head_positions = {
     'stand_picking_skirt': (-0.4807, -0.5364, 15.7269),
     'waving_hand': (0.3578, -1.1006, 14.8919),
 }
+
+
+expressions = [
+    ['笑い', 'にやり'],
+    ['じと目', 'う'],
+    ['びっくり', 'え', '涙１'],
+    ['てへぺろ', '赤面', 'じと目２']
+]
+
+
+expressions_elements = set(sum(expressions, []))
 
 
 cloth_names = ['スカート', 'ワンピース', 'フリル', '腕カバー', '袖', '下着', 'パンツ', 'ネックカバー', '上着', 'サラシ', '帯', '艤装', '胸飾り', '服', '新規材質', 'boot', 'belt', 'pants', 'swet', 'bakkcle', 'bikini']
@@ -121,6 +133,28 @@ def example_function(model_path):
     pose_files = os.listdir('poses')
     for pose_file in pose_files:
         pose_name = pose_file[:-4]
+
+        i = randrange(10)
+        if i < 4:
+            expression = expressions[i]
+        else:
+            expression = []
+        
+        shape_key = bpy.data.shape_keys.get('Key')
+        if shape_key is not None:
+            for expressions_element in expressions_elements:
+                key_block = shape_key.key_blocks.get(expressions_element)
+                if key_block is not None:
+                    if expressions_element in expression:
+                        key_block.value = 1.0
+                    else:
+                        key_block.value = 0.0
+            for material in bpy.data.materials:
+                if material.name == '赤面':
+                    if '赤面' in expression:
+                        material.mmd_material.alpha = 1.0
+                    else:
+                        material.mmd_material.alpha = 0.0
 
         importer = VPDImporter(
             filepath=os.path.join(os.getcwd(), f'poses/{pose_name}.vpd'),
