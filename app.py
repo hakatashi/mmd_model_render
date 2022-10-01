@@ -1,7 +1,10 @@
+from hashlib import sha256
 import os
-from random import randrange
+from random import choice, randrange, shuffle
 import re
 import sys
+from tempfile import TemporaryDirectory
+import unicodedata
 import bpy
 from mmd_tools.core.pmx.importer import PMXImporter
 from mmd_tools.core.vpd.importer import VPDImporter
@@ -9,9 +12,7 @@ from mmd_tools.utils import makePmxBoneMap
 from mathutils import Vector
 from pathlib import Path
 from wand.image import Image
-
-
-skin_mode = False
+import patoolib
 
 
 reference_head_positions = {
@@ -59,17 +60,17 @@ expressions = [
 expressions_elements = set(sum(expressions, []))
 
 
-cloth_names = ['スカート', 'ワンピース', 'フリル', '腕カバー', '袖', '下着', 'パンツ', 'ネックカバー', '上着', 'サラシ', '帯', '艤装', '胸飾り', '服', '新規材質', 'boot', 'belt', 'pants', 'swet', 'bakkcle', 'bikini']
-skin_names = ['の中', '中身', '肌', '体']
+cloth_names = ['スカート', 'ワンピース', 'フリル', '腕カバー', '袖', '下着', 'パンツ', 'ネックカバー', '上着', 'サラシ', '帯', '艤装', '胸飾り', '服', 'ネクタイ', 'スパッツ', 'ドロワ', 'タンクトップ', '水着', 'シャツ', '新規材質', 'boot', 'belt', 'pants', 'swet', 'bakkcle', 'bikini', 'skrt', 'wear', 'stkg', 'cm3d2', 'cos_tex', 'gb_cos']
+skin_names = ['の中', '中身', '肌', '体', 'skin', 'nip']
 
 
-def example_function(model_path):
+def example_function(model_path, file_hash, skin_mode):
     scene_path = os.getcwd() + '/blend/project.blend'
     # scene_path = os.getcwd() + '/project_dump1.blend'
     bpy.ops.wm.open_mainfile(filepath=scene_path)
 
     PMXImporter().execute(
-        filepath=model_path,
+        filepath=str(model_path),
         types=set(['MESH', 'ARMATURE', 'PHYSICS', 'MORPHS', 'DISPLAY']),
         clean_model=True,
     )
@@ -88,7 +89,7 @@ def example_function(model_path):
     bpy.ops.wm.save_as_mainfile(filepath='project_dump1.blend')
 
     for material in bpy.data.materials:
-        if '白目' in material.name:
+        if '白目' in material.name or '目白' in material.name:
             mmd_base_tex = material.node_tree.nodes.get('mmd_base_tex')
             material_output = material.node_tree.nodes.get('Material Output')
 
@@ -112,8 +113,9 @@ def example_function(model_path):
                 )
 
         if skin_mode:
-            is_cloth = any(re.search(cloth_name, material.name, re.IGNORECASE) for cloth_name in cloth_names)
-            is_skin = any(re.search(skin_name, material.name, re.IGNORECASE) for skin_name in skin_names)
+            material_name = unicodedata.normalize('NFKC', material.name)
+            is_cloth = any(re.search(cloth_name, material_name, re.IGNORECASE) for cloth_name in cloth_names)
+            is_skin = any(re.search(skin_name, material_name, re.IGNORECASE) for skin_name in skin_names)
             if is_cloth:
                 material.mmd_material.alpha = 0.0
                 pass
@@ -169,7 +171,7 @@ def example_function(model_path):
             head_position = arm_object.location + head_bone.head
             reference_head_position = reference_head_positions.get(pose_name)
 
-            if 'Rushia' in model_path:
+            if 'Rushia' in str(model_path):
                 file_object = open('sample.txt', 'a')
                 file_object.write(f"    '{pose_name}': {head_position},\n")
                 file_object.close()
@@ -178,8 +180,9 @@ def example_function(model_path):
 
         bpy.context.scene.camera = target_camera
 
-        png_filename = os.getcwd() + f'/outputs/render_{pose_name}.png'
-        webp_filename = os.getcwd() + f'/outputs/render_{pose_name}.webp'
+        mode = 'original' if skin_mode == False else 'nude'
+        png_filename = os.getcwd() + f'/outputs/{file_hash}/{mode}/render_{pose_name}.png'
+        webp_filename = os.getcwd() + f'/outputs/{file_hash}/{mode}/render_{pose_name}.webp'
 
         render = bpy.context.scene.render
         render.use_file_extension = True
@@ -195,4 +198,29 @@ def example_function(model_path):
 
 
 if __name__ == "__main__":
-    example_function(sys.argv[5])
+    # example_function(sys.argv[5])
+    models_dir = Path('Z:\\Data\\Models')
+    model_files = list(models_dir.iterdir())
+    shuffle(model_files)
+
+    for model_file in model_files:
+        model_file = choice(model_files)
+        model_file_name = bytes(model_file.relative_to(models_dir))
+        print(model_file.absolute())
+
+        with TemporaryDirectory() as tmpdir:
+            patoolib.extract_archive(str(model_file.absolute()), outdir=tmpdir)
+            try:
+                for f in Path(tmpdir).rglob('*'):
+                    filename = bytes(f.relative_to(tmpdir))
+                    if filename.decode().endswith('.pmx'):
+                        print(f'Processing {filename.decode()}...')
+                        file_hash_key = model_file_name + b'\\' + filename
+                        file_hash = sha256()
+                        file_hash.update(file_hash_key)
+                        with open('hashes.txt', 'a') as hashes_file:
+                            hashes_file.write(f"    {file_hash_key}: '{file_hash.hexdigest()}',\n")
+                        for skin_mode in [True, False]:
+                            example_function(f, file_hash=file_hash.hexdigest(), skin_mode=skin_mode)
+            except Exception as e:
+                print(e)
