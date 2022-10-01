@@ -127,6 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
 *.blend*
 !blend/project.blend
 *.png
+poses
